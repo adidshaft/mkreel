@@ -2,6 +2,7 @@
   "name": "mkreel",
   "version": "0.1.0",
   "description": "Creator-grade CLI for clipping YouTube videos into polished reels.",
+  "license": "MIT",
   "keywords": [
     "youtube",
     "video",
@@ -14,6 +15,14 @@
     "yt-dlp",
     "cli"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adidshaft/mkreel.git"
+  },
+  "homepage": "https://github.com/adidshaft/mkreel#readme",
+  "bugs": {
+    "url": "https://github.com/adidshaft/mkreel/issues"
+  },
   "type": "module",
   "bin": {
     "mkreel": "./dist/cli.js"
