@@ -1,85 +1,74 @@
-# mkreel
+<p align="center">
+  <img src="https://raw.githubusercontent.com/adidshaft/mkreel/main/assets/mkreel-terminal.svg" alt="mkreel terminal card" width="860" />
+</p>
 
-`mkreel` is a production-style Node.js CLI for turning a YouTube segment into a creator-ready MP4.
+<h1 align="center">mkreel</h1>
 
-Run:
+<p align="center">
+  Creator-grade CLI for clipping YouTube moments into polished vertical reels with optional burned captions.
+</p>
 
-```bash
-mkreel <url>
-```
+<p align="center">
+  <a href="https://github.com/adidshaft/mkreel/actions/workflows/ci.yml">
+    <img alt="CI" src="https://img.shields.io/github/actions/workflow/status/adidshaft/mkreel/ci.yml?branch=main&style=for-the-badge&label=CI">
+  </a>
+  <a href="https://www.npmjs.com/package/mkreel">
+    <img alt="npm ready" src="https://img.shields.io/badge/npm-ready-CB3837?style=for-the-badge&logo=npm&logoColor=white">
+  </a>
+  <img alt="Node 20.10 or newer" src="https://img.shields.io/badge/node-%3E%3D20.10-111827?style=for-the-badge&logo=node.js&logoColor=83CD29">
+  <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-111827?style=for-the-badge&color=0F172A">
+</p>
 
-`mkreel` guides you through a compact interactive flow, downloads the selected clip, optionally converts it to a 9:16 reel, retimes English subtitles natively in TypeScript, burns them in, and exports a final MP4.
+<p align="center">
+  <code>clip it</code>
+  <code>crop it</code>
+  <code>caption it</code>
+  <code>ship it</code>
+</p>
 
-## Highlights
+`mkreel` takes a YouTube URL, lets you choose a segment, optionally turns it into a `1080x1920` reel, retimes English subtitles in native TypeScript, burns them into the video, and exports a ready-to-post MP4.
 
-- Guided interactive UX with smart defaults
-- Fully scriptable flags for automation and shell usage
+## Why It Feels Good
+
+- Guided interactive flow with smart defaults
+- Fully scriptable flags when you want automation
 - First-run dependency bootstrapping for `ffmpeg`, `ffprobe`, and `yt-dlp`
-- Managed tool cache in an app-owned directory
-- Native SRT parsing, retiming, clamping, renumbering, and serialization
-- Overlap cleanup so caption cues do not stack on top of each other
-- Canvas-aware ASS subtitle rendering for reliable placement and scaling
-- Default auto-wrap and auto-fit so long captions stay inside the frame
-- Reel rendering with blurred background fill and centered foreground video
-- Clean temp workspace lifecycle with `--keep-temp` and debug-friendly failures
+- Ready-made caption presets for Shorts, Reels, and TikTok-style exports
+- Clean subtitle retiming, clamping, overlap cleanup, and renumbering
+- Blur-fill vertical reel layout with centered foreground video
+- Predictable output naming and debug-friendly temp workspace handling
 
-## Install
+## Quick Start
+
+### 1. Install
 
 Requires Node.js `>=20.10`.
-
-### From npm
 
 ```bash
 npm install -g mkreel
 ```
 
-Or run it without installing globally:
+Or run it without a global install:
 
 ```bash
 npx mkreel --help
 ```
 
-### Local development
+### 2. Run It
 
 ```bash
-npm install
-npm run build
-node dist/cli.js --help
+mkreel https://www.youtube.com/watch?v=YOUR_VIDEO_ID
 ```
 
-## First-run setup
-
-`mkreel` checks for working system binaries first.
-
-If they are missing, it automatically provisions managed tools and caches them for reuse:
-
-- `ffmpeg`
-- `ffprobe`
-- `yt-dlp`
-
-Managed tools are cached under the app cache directory, for example on macOS:
-
-```text
-~/Library/Caches/mkreel/bin/
-```
-
-This setup is silent by default and surfaces raw details only when `--debug` is enabled.
-
-## Interactive usage
-
-The primary UX is:
+If you prefer `npx`:
 
 ```bash
-mkreel https://www.youtube.com/watch?v=...
+npx mkreel https://www.youtube.com/watch?v=YOUR_VIDEO_ID
 ```
 
-If you installed from npm, you can also run:
+### 3. Answer A Few Prompts
 
-```bash
-npx mkreel https://www.youtube.com/watch?v=...
-```
-
-Interactive flow:
+The interactive flow is intentionally compact:
 
 1. Validate the URL
 2. Ask for clip start
@@ -91,9 +80,20 @@ Interactive flow:
 8. Run the pipeline
 9. Print the final file path
 
-## Non-interactive usage
+## Fast Mental Model
 
-Example:
+| You want | Use |
+| --- | --- |
+| A vertical export for social apps | `--mode reel` |
+| The original aspect ratio | `--mode original` |
+| Burned captions | `--subs burn` |
+| No captions | `--subs skip` |
+| Human-friendly times | `8:43`, `08:43`, or `00:08:43` |
+| A dry preview first | `--dry-run` |
+| Temp files kept for inspection | `--keep-temp` |
+| Deep failure details | `--debug` |
+
+## A Good First Command
 
 ```bash
 mkreel "https://youtu.be/dQw4w9WgXcQ" \
@@ -107,42 +107,93 @@ mkreel "https://youtu.be/dQw4w9WgXcQ" \
   --output final.mp4
 ```
 
-Key flags:
+If you just want to preview the resolved plan without downloading or exporting:
 
-- `--start <time>` clip start, accepts `8:43`, `08:43`, or `00:08:43`
-- `--end <time>` clip end
-- `--mode <mode>` `reel` or `original`
-- `--subs <mode>` `burn` or `skip`
-- `--subtitle-position <position>` `bottom`, `lower-third`, `center`, `top`, or `custom`
-- `--subtitle-size <size>` `compact`, `balanced`, `large`, `xl`, or `custom`
-- `--subtitle-style <style>` `creator`, `clean`, `soft`, or `custom`
-- `--output <file>` final output file path
-- `--open` open the exported file after completion
-- `--keep-temp` preserve the workspace after success
-- `--dry-run` print the resolved plan without downloading or exporting
-- `--debug` print deeper failure detail and preserve temp files on errors
-- `--non-interactive` require all key flags and disable prompts
+```bash
+mkreel "https://youtu.be/dQw4w9WgXcQ" \
+  --start 8:43 \
+  --end 11:38 \
+  --mode reel \
+  --subs burn \
+  --dry-run
+```
 
-Advanced caption tuning flags:
+## Caption Presets
 
-- `--subtitle-alignment <n>` custom ASS alignment `1-9`
-- `--subtitle-margin-v <px>` custom vertical margin
-- `--subtitle-margin-l <px>` custom left margin
-- `--subtitle-margin-r <px>` custom right margin
-- `--subtitle-font-size <n>` custom subtitle font size
-- `--subtitle-outline <n>` custom outline thickness
-- `--subtitle-shadow <n>` custom shadow strength
-- `--subtitle-bold` force bold captions
+Interactive caption presets are designed so you usually do not need manual tuning.
 
-## Reel mode
+| Preset | Best for | Feel |
+| --- | --- | --- |
+| Bottom creator | General reels and talking-head clips | Strong default, creator-style |
+| Bottom compact | Longer spoken clips | Smaller, denser captions |
+| Lower third clean | Busy lower UI areas | Safer above overlays |
+| Center punch | Dramatic or emphatic clips | Large, loud, punchy |
+| Top safe clean | Lower frame covered by UI | Moves captions away from the bottom |
+| Custom / advanced | Fine-grained control | Manual ASS tuning |
 
-When `--mode reel` is selected, `mkreel` exports a `1080x1920` MP4 using:
+Long captions are wrapped automatically, and `mkreel` can reduce caption size slightly when needed to keep text inside the frame.
+
+## Core Flags
+
+| Flag | Meaning |
+| --- | --- |
+| `--start <time>` | Clip start time |
+| `--end <time>` | Clip end time |
+| `--mode <mode>` | `reel` or `original` |
+| `--subs <mode>` | `burn` or `skip` |
+| `--subtitle-position <position>` | `bottom`, `lower-third`, `center`, `top`, or `custom` |
+| `--subtitle-size <size>` | `compact`, `balanced`, `large`, `xl`, or `custom` |
+| `--subtitle-style <style>` | `creator`, `clean`, `soft`, or `custom` |
+| `--output <file>` | Output file path |
+| `--open` | Open the exported file after completion |
+| `--keep-temp` | Keep the job workspace after success |
+| `--dry-run` | Print the resolved plan without running the pipeline |
+| `--debug` | Print deeper failure detail and preserve temp files on errors |
+| `--non-interactive` | Disable prompts and require all key flags |
+
+<details>
+<summary><strong>Advanced caption tuning flags</strong></summary>
+
+<br />
+
+| Flag | Meaning |
+| --- | --- |
+| `--subtitle-alignment <n>` | Custom ASS alignment `1-9` |
+| `--subtitle-margin-v <px>` | Custom vertical margin |
+| `--subtitle-margin-l <px>` | Custom left margin |
+| `--subtitle-margin-r <px>` | Custom right margin |
+| `--subtitle-font-size <n>` | Custom subtitle font size |
+| `--subtitle-outline <n>` | Custom outline thickness |
+| `--subtitle-shadow <n>` | Custom shadow strength |
+| `--subtitle-bold` | Force bold captions |
+
+</details>
+
+## What Happens On First Run
+
+`mkreel` checks for working system binaries first. If they are missing, it provisions managed versions of:
+
+- `ffmpeg`
+- `ffprobe`
+- `yt-dlp`
+
+Managed tools are cached for reuse. On macOS, that typically lands under:
+
+```text
+~/Library/Caches/mkreel/bin/
+```
+
+This setup is quiet by default and only shows raw details when `--debug` is enabled.
+
+## Reel Mode
+
+When `--mode reel` is selected, `mkreel` exports a `1080x1920` MP4 with:
 
 - blurred background fill
 - centered foreground video
 - preserved audio
 
-The default reel layout is based on:
+The default vertical layout is based on:
 
 ```text
 [0:v]split=2[bgsrc][fgsrc];
@@ -151,7 +202,7 @@ The default reel layout is based on:
 [bg][fg]overlay=(W-w)/2:(H-h)/2
 ```
 
-## Subtitle behavior
+## Subtitle Behavior
 
 If subtitles are enabled, `mkreel`:
 
@@ -165,34 +216,9 @@ If subtitles are enabled, `mkreel`:
 8. Renumbers cues from `1`
 9. Burns subtitles into the final export with a styled ASS track
 
-Default subtitle placements:
+Default styling includes white text, black outline, bold creator captions by default, and preset-specific outline tuning.
 
-- Bottom safe: creator-friendly lower safe zone for reels
-- Lower third: a little higher for busy lower UI
-- Center emphasis: center anchored for punchy clips
-- Top safe: top anchored when the lower frame is busy
-
-Interactive preset flow:
-
-- Bottom creator: the simplest all-round default
-- Bottom compact: smaller, denser captions for longer spoken clips
-- Lower third clean: useful when the very bottom is busy
-- Center punch: large, loud captions for dramatic clips
-- Top safe clean: useful when lower overlays cover the frame
-- Custom / advanced: only when you actually want manual tuning
-
-Long captions are wrapped automatically by default, and `mkreel` will reduce caption size a bit when needed to keep text inside the frame.
-
-Default styling:
-
-- Primary color white
-- Outline color black
-- Bold creator captions by default
-- Border style `1`
-- Outline `4-5` depending on preset
-- Shadow `1`
-
-## Output naming
+## Output Naming
 
 Generated filenames are deterministic and based on:
 
@@ -208,11 +234,11 @@ Example:
 video-title-08m43s-11m38s-reel-subbed.mp4
 ```
 
-If that path already exists, `mkreel` automatically adds a numeric suffix.
+If the path already exists, `mkreel` automatically adds a numeric suffix.
 
-## Debugging and troubleshooting
+## Troubleshooting
 
-### `yt-dlp` or `ffmpeg` setup failed
+### Tool setup failed
 
 Run with:
 
@@ -220,13 +246,11 @@ Run with:
 mkreel <url> --debug
 ```
 
-This exposes more detail while preserving temp files for inspection.
-
 ### No subtitles available
 
 Interactive runs offer to continue without subtitles.
 
-For non-interactive runs, use:
+For non-interactive runs:
 
 ```bash
 --subs skip
@@ -238,15 +262,13 @@ For non-interactive runs, use:
 
 ### A run failed mid-pipeline
 
-In failure cases `mkreel` preserves the temp workspace path so you can inspect:
+On failures, `mkreel` preserves the temp workspace path so you can inspect:
 
 - downloaded media
 - subtitle files
 - intermediate outputs
 
 ## Development
-
-Useful commands:
 
 ```bash
 npm install
@@ -256,14 +278,15 @@ npm test
 npm run dev -- --help
 ```
 
-## Tests
+## Local Development Usage
 
-The current test suite covers:
+```bash
+npm run dev -- "https://www.youtube.com/watch?v=YOUR_VIDEO_ID"
+```
 
-- time parsing
-- range validation
-- SRT parsing
-- subtitle retiming and renumbering
-- SRT serialization
-- output name generation
-- CLI option normalization
+Or build and run the compiled CLI:
+
+```bash
+npm run build
+node dist/cli.js --help
+```
