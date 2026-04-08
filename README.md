@@ -1,5 +1,9 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/adidshaft/mkreel/main/assets/mkreel-terminal.svg" alt="mkreel terminal card" width="860" />
+  Send feedbacks on X: <a href="https://x.com/adidshaft">@adidshaft</a>
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/adidshaft/mkreel/main/assets/mkreel-terminal.png" alt="mkreel terminal card" width="860" />
 </p>
 
 <h1 align="center">mkreel</h1>
