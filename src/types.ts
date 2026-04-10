@@ -2,6 +2,17 @@ export type OutputMode = "reel" | "original";
 
 export type SubtitleMode = "burn" | "skip";
 
+export type AiProviderName = "codex" | "claude";
+
+export type AiProviderPreference = "auto" | AiProviderName;
+
+export type CaptionPresetId =
+  | "bottom-creator"
+  | "bottom-compact"
+  | "lower-third-clean"
+  | "center-punch"
+  | "top-clean";
+
 export type SubtitlePositionPreset = "bottom" | "lower-third" | "center" | "top" | "custom";
 
 export type SubtitleSizePreset = "compact" | "balanced" | "large" | "xl" | "custom";
@@ -37,6 +48,8 @@ export interface RequestedCliOptions {
   end?: string;
   mode?: OutputMode;
   subs?: SubtitleMode;
+  smart?: boolean;
+  ai?: AiProviderPreference;
   subtitlePosition?: SubtitlePositionPreset;
   subtitleSize?: SubtitleSizePreset;
   subtitleStyle?: SubtitleStylePreset;
@@ -63,6 +76,8 @@ export interface NormalizedCliOptions {
   endSeconds?: number;
   mode?: OutputMode;
   subtitles?: SubtitleMode;
+  smart: boolean;
+  ai: AiProviderPreference;
   subtitlePlacement?: SubtitlePlacement;
   output?: string;
   open: boolean;

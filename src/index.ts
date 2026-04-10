@@ -1,15 +1,20 @@
 import path from "node:path";
 
+import { confirm } from "@inquirer/prompts";
 import { execa } from "execa";
 import fs from "fs-extra";
 import { z } from "zod";
 
+import { buildTranscriptContext, loadPackageSidecarContext, titleFromFileName } from "./ai/context.js";
+import { getClipSuggestions, getPackageOutput, getSmartRecommendation } from "./ai/index.js";
+import { buildPlacementFromCaptionPreset } from "./captions.js";
 import { ensureTools } from "./deps/ensureTools.js";
-import { AppError } from "./errors.js";
+import { AppError, asAppError } from "./errors.js";
 import {
   buildPlacementFromFlags,
   collectInteractiveOptions,
   finalizeNonInteractiveOptions,
+  type InteractiveOptionDefaults,
   promptContinueWithoutSubtitles,
   validateSubtitlePlacement,
 } from "./prompts.js";
@@ -19,12 +24,24 @@ import { parseSrt } from "./subtitles/parse.js";
 import { shiftSubtitles } from "./subtitles/shift.js";
 import { writeSrt } from "./subtitles/write.js";
 import { parseTimeInput } from "./time.js";
-import type { ExecutionOptions, NormalizedCliOptions, RequestedCliOptions, VideoMetadata } from "./types.js";
+import type {
+  AiProviderPreference,
+  ExecutionOptions,
+  NormalizedCliOptions,
+  RequestedCliOptions,
+  StepLogger,
+  VideoMetadata,
+} from "./types.js";
 import {
   printDone,
   printDryRun,
+  printPackageOutput,
+  printPackageOutputJson,
+  printClipSuggestions,
+  printClipSuggestionsJson,
   printInteractiveGuide,
   printNote,
+  printSmartSuggestion,
   printSummary,
   printWarning,
   renderHeader,
@@ -38,6 +55,8 @@ const optionSchema = z.object({
   end: z.string().trim().optional(),
   mode: z.enum(["reel", "original"]).optional(),
   subs: z.enum(["burn", "skip"]).optional(),
+  smart: z.boolean().optional(),
+  ai: z.enum(["auto", "codex", "claude"]).optional(),
   subtitlePosition: z.enum(["bottom", "lower-third", "center", "top", "custom"]).optional(),
   subtitleSize: z.enum(["compact", "balanced", "large", "xl", "custom"]).optional(),
   subtitleStyle: z.enum(["creator", "clean", "soft", "custom"]).optional(),
@@ -142,6 +161,8 @@ function normalizeCliOptions(input: RequestedCliOptions): NormalizedCliOptions {
     endSeconds: parsed.end ? parseTimeInput(parsed.end) : undefined,
     mode: parsed.mode,
     subtitles: parsed.subs,
+    smart: parsed.smart ?? false,
+    ai: parsed.ai ?? "auto",
     subtitlePlacement:
       parsed.subs === "burn" ||
       parsed.subtitlePosition ||
@@ -184,12 +205,15 @@ function normalizeCliOptions(input: RequestedCliOptions): NormalizedCliOptions {
   return normalized;
 }
 
-async function resolveExecutionOptions(normalized: NormalizedCliOptions): Promise<ExecutionOptions> {
+async function resolveExecutionOptions(
+  normalized: NormalizedCliOptions,
+  defaults?: InteractiveOptionDefaults,
+): Promise<ExecutionOptions> {
   if (normalized.nonInteractive) {
     return finalizeNonInteractiveOptions(normalized);
   }
 
-  return collectInteractiveOptions(normalized);
+  return collectInteractiveOptions(normalized, defaults);
 }
 
 async function buildRetimedSubtitleFile(
@@ -209,6 +233,166 @@ async function buildRetimedSubtitleFile(
   await writeSrt(shifted, outputPath);
 }
 
+async function runMaybeStepped<T>(
+  label: string,
+  debug: boolean,
+  quiet: boolean,
+  task: () => Promise<T>,
+): Promise<T> {
+  if (quiet) {
+    return task();
+  }
+
+  return runStep(label, debug, async () => task());
+}
+
+const silentLogger: StepLogger = {
+  setText() {},
+  debug() {},
+};
+
+async function ensureToolsMaybeStepped(debug: boolean, quiet: boolean) {
+  if (quiet) {
+    return ensureTools(silentLogger);
+  }
+
+  return runStep("Checking environment", debug, async (logger) => {
+    const ensured = await ensureTools(logger);
+    if (ensured.setupPerformed) {
+      logger.setText("Preparing video tools");
+    }
+    return ensured;
+  });
+}
+
+async function loadSubtitleTranscriptContext(args: {
+  url: string;
+  metadata: VideoMetadata;
+  tools: Awaited<ReturnType<typeof ensureTools>>["tools"];
+  debug: boolean;
+  quiet?: boolean;
+}): Promise<string | undefined> {
+  if (!args.metadata.subtitleAvailability.preferredSource) {
+    return undefined;
+  }
+
+  const workspace = await createJobWorkspace();
+  try {
+    const downloadedSubtitle = await runMaybeStepped(
+      "Loading subtitles for AI suggestions",
+      args.debug,
+      Boolean(args.quiet),
+      async () => {
+        return downloadEnglishSubtitles(
+          args.url,
+          args.metadata,
+          workspace,
+          args.tools,
+          args.debug,
+        );
+      },
+    );
+
+    const subtitleDocument = parseSrt(await fs.readFile(downloadedSubtitle.path, "utf8"));
+    if (subtitleDocument.cues.length === 0) {
+      return undefined;
+    }
+
+    return buildTranscriptContext(subtitleDocument.cues);
+  } finally {
+    await cleanupWorkspace(workspace);
+  }
+}
+
+async function maybeResolveSmartSuggestion(args: {
+  normalized: NormalizedCliOptions;
+  metadata: VideoMetadata;
+  tools: Awaited<ReturnType<typeof ensureTools>>["tools"];
+}): Promise<{
+  normalized: NormalizedCliOptions;
+  defaults?: InteractiveOptionDefaults;
+}> {
+  if (!args.normalized.smart || args.normalized.nonInteractive) {
+    return { normalized: args.normalized };
+  }
+
+  if (!args.metadata.subtitleAvailability.preferredSource) {
+    printWarning("Smart suggestions weren't available, so mkreel will continue with the regular flow.");
+    return { normalized: args.normalized };
+  }
+
+  try {
+    const transcriptText = await loadSubtitleTranscriptContext({
+      url: args.normalized.url,
+      metadata: args.metadata,
+      tools: args.tools,
+      debug: args.normalized.debug,
+    });
+
+    if (!transcriptText) {
+      printWarning("Smart suggestions weren't available, so mkreel will continue with the regular flow.");
+      return { normalized: args.normalized };
+    }
+
+    const suggestion = await runStep("Thinking through a smart suggestion", args.normalized.debug, async () => {
+      return getSmartRecommendation({
+        ai: args.normalized.ai,
+        cwd: args.normalized.cwd,
+        sourceTitle: args.metadata.title,
+        uploader: args.metadata.uploader,
+        durationSeconds: args.metadata.durationSeconds,
+        transcriptText,
+        creatorGoal: "Suggest one creator-ready clip for a polished social export.",
+      });
+    });
+
+    printSmartSuggestion(suggestion.data, suggestion.provider);
+
+    const useSuggestion = await confirm({
+      message: "Use this smart suggestion?",
+      default: true,
+    });
+
+    const defaults: InteractiveOptionDefaults = {
+      startSeconds: suggestion.data.startSeconds,
+      endSeconds: suggestion.data.endSeconds,
+      mode: suggestion.data.mode,
+      subtitles: "burn",
+      captionPresetId: suggestion.data.captionPreset,
+    };
+
+    if (!useSuggestion) {
+      return {
+        normalized: args.normalized,
+        defaults,
+      };
+    }
+
+    return {
+      normalized: {
+        ...args.normalized,
+        startSeconds: suggestion.data.startSeconds,
+        endSeconds: suggestion.data.endSeconds,
+        mode: suggestion.data.mode,
+        subtitles: "burn",
+        subtitlePlacement: buildPlacementFromCaptionPreset(suggestion.data.captionPreset),
+      },
+      defaults,
+    };
+  } catch (error) {
+    printWarning("Smart suggestions weren't available, so mkreel will continue with the regular flow.");
+    if (args.normalized.debug) {
+      const normalizedError = asAppError(error, "Smart suggestions failed.");
+      if (normalizedError.details) {
+        printNote(`Smart mode details: ${normalizedError.details}`);
+      } else {
+        printNote(`Smart mode details: ${normalizedError.message}`);
+      }
+    }
+    return { normalized: args.normalized };
+  }
+}
+
 export async function runMkreel(input: RequestedCliOptions): Promise<void> {
   const normalized = normalizeCliOptions(input);
   renderHeader({
@@ -217,30 +401,59 @@ export async function runMkreel(input: RequestedCliOptions): Promise<void> {
   if (!normalized.nonInteractive) {
     printInteractiveGuide();
   }
-  let executionOptions = await resolveExecutionOptions(normalized);
+  let resolvedNormalized = normalized;
+  let interactiveDefaults: InteractiveOptionDefaults | undefined;
+  let toolResult: Awaited<ReturnType<typeof ensureTools>> | undefined;
+  let metadata: VideoMetadata | undefined;
+  let tools: Awaited<ReturnType<typeof ensureTools>>["tools"] | undefined;
+
+  if (normalized.smart && !normalized.nonInteractive) {
+    toolResult = await ensureToolsMaybeStepped(normalized.debug, false);
+    tools = toolResult.tools;
+
+    metadata = await runStep("Fetching video metadata", normalized.debug, async () => {
+      return fetchVideoMetadata(normalized.url, toolResult!.tools, normalized.debug);
+    });
+
+    const smartResolution = await maybeResolveSmartSuggestion({
+      normalized,
+      metadata,
+      tools: toolResult.tools,
+    });
+    resolvedNormalized = smartResolution.normalized;
+    interactiveDefaults = smartResolution.defaults;
+  }
+
+  let executionOptions = await resolveExecutionOptions(resolvedNormalized, interactiveDefaults);
 
   let workspace: Awaited<ReturnType<typeof createJobWorkspace>> | undefined;
   let outputPath: string | undefined;
   let keepWorkspace = false;
-  let tools: Awaited<ReturnType<typeof ensureTools>>["tools"] | undefined;
 
   try {
-    const toolResult = await runStep("Checking environment", executionOptions.debug, async (logger) => {
-      const ensured = await ensureTools(logger);
-      if (ensured.setupPerformed) {
-        logger.setText("Preparing video tools");
-      }
-      return ensured;
-    });
-    tools = toolResult.tools;
+    if (!toolResult) {
+      toolResult = await ensureToolsMaybeStepped(executionOptions.debug, false);
+      tools = toolResult.tools;
+    }
 
-    const metadata = await runStep("Fetching video metadata", executionOptions.debug, async () => {
-      return fetchVideoMetadata(executionOptions.url, toolResult.tools, executionOptions.debug);
-    });
+    if (!metadata) {
+      metadata = await runStep("Fetching video metadata", executionOptions.debug, async () => {
+        return fetchVideoMetadata(executionOptions.url, toolResult!.tools, executionOptions.debug);
+      });
+    }
 
-    validateRangeAgainstMetadata(metadata, executionOptions);
+    const activeToolResult = toolResult;
+    const activeMetadata = metadata;
 
-    if (executionOptions.subtitles === "burn" && !metadata.subtitleAvailability.preferredSource) {
+    if (!activeToolResult || !activeMetadata) {
+      throw new AppError("mkreel could not prepare the required runtime context.", {
+        code: "MKREEL_RUNTIME_SETUP_FAILED",
+      });
+    }
+
+    validateRangeAgainstMetadata(activeMetadata, executionOptions);
+
+    if (executionOptions.subtitles === "burn" && !activeMetadata.subtitleAvailability.preferredSource) {
       if (executionOptions.nonInteractive) {
         throw new AppError("Subtitles were requested, but English subtitles are not available.", {
           code: "SUBTITLES_UNAVAILABLE",
@@ -264,8 +477,8 @@ export async function runMkreel(input: RequestedCliOptions): Promise<void> {
 
     workspace = await createJobWorkspace();
     const jobWorkspace = workspace;
-    outputPath = await resolveOutputPath(executionOptions.cwd, metadata, executionOptions);
-    const plan = buildPlannedRun(metadata, executionOptions, toolResult.tools, outputPath, jobWorkspace.root);
+    outputPath = await resolveOutputPath(executionOptions.cwd, activeMetadata, executionOptions);
+    const plan = buildPlannedRun(activeMetadata, executionOptions, activeToolResult.tools, outputPath, jobWorkspace.root);
 
     printSummary(executionOptions, plan);
 
@@ -279,7 +492,7 @@ export async function runMkreel(input: RequestedCliOptions): Promise<void> {
         executionOptions.url,
         executionOptions.range,
         jobWorkspace,
-        toolResult.tools,
+        activeToolResult.tools,
         executionOptions.debug,
       );
     });
@@ -290,9 +503,9 @@ export async function runMkreel(input: RequestedCliOptions): Promise<void> {
         const downloadedSubtitle = await runStep("Downloading subtitles", executionOptions.debug, async () => {
           return downloadEnglishSubtitles(
             executionOptions.url,
-            metadata,
+            activeMetadata,
             jobWorkspace,
-            toolResult.tools,
+            activeToolResult.tools,
             executionOptions.debug,
           );
         });
@@ -316,7 +529,7 @@ export async function runMkreel(input: RequestedCliOptions): Promise<void> {
               subtitles: "skip",
               subtitlePlacement: undefined,
             };
-            outputPath = await resolveOutputPath(executionOptions.cwd, metadata, executionOptions);
+            outputPath = await resolveOutputPath(executionOptions.cwd, activeMetadata, executionOptions);
             printWarning("Continuing without subtitles.");
             printNote(`Output updated to ${outputPath}`);
           } else {
@@ -339,7 +552,7 @@ export async function runMkreel(input: RequestedCliOptions): Promise<void> {
 
     await runStep(exportLabel, executionOptions.debug, async () => {
       await exportFinalVideo({
-        tools: toolResult.tools,
+        tools: activeToolResult.tools,
         inputPath: clipPath,
         outputPath: outputPath!,
         mode: executionOptions.mode,
@@ -376,6 +589,161 @@ export async function runMkreel(input: RequestedCliOptions): Promise<void> {
       printNote(`Used tools: ffmpeg=${tools.ffmpeg.path} | yt-dlp=${tools.ytDlp.path}`);
     }
   }
+}
+
+const suggestCommandSchema = z.object({
+  url: z.string().trim().min(1),
+  ai: z.enum(["auto", "codex", "claude"]).optional(),
+  json: z.boolean().optional(),
+  debug: z.boolean().optional(),
+  cwd: z.string(),
+});
+
+const packageCommandSchema = z.object({
+  inputPath: z.string().trim().min(1),
+  ai: z.enum(["auto", "codex", "claude"]).optional(),
+  json: z.boolean().optional(),
+  debug: z.boolean().optional(),
+  context: z.string().trim().optional(),
+  cwd: z.string(),
+});
+
+function normalizeSuggestOptions(input: {
+  url: string;
+  ai?: AiProviderPreference;
+  json?: boolean;
+  debug?: boolean;
+  cwd: string;
+}) {
+  const parsed = suggestCommandSchema.parse(input);
+  return {
+    url: validateUrl(parsed.url),
+    ai: parsed.ai ?? "auto",
+    json: parsed.json ?? false,
+    debug: parsed.debug ?? false,
+    cwd: parsed.cwd,
+  };
+}
+
+function normalizePackageCommandOptions(input: {
+  inputPath: string;
+  ai?: AiProviderPreference;
+  json?: boolean;
+  debug?: boolean;
+  context?: string;
+  cwd: string;
+}) {
+  const parsed = packageCommandSchema.parse(input);
+  return {
+    inputPath: path.resolve(parsed.cwd, parsed.inputPath),
+    ai: parsed.ai ?? "auto",
+    json: parsed.json ?? false,
+    debug: parsed.debug ?? false,
+    context: parsed.context?.trim() || undefined,
+    cwd: parsed.cwd,
+  };
+}
+
+export async function runSuggestCommand(input: {
+  url: string;
+  ai?: AiProviderPreference;
+  json?: boolean;
+  debug?: boolean;
+  cwd: string;
+}): Promise<void> {
+  const options = normalizeSuggestOptions(input);
+  if (!options.json) {
+    renderHeader({
+      compact: false,
+    });
+  }
+
+  const toolResult = await ensureToolsMaybeStepped(options.debug, options.json);
+  const metadata = await runMaybeStepped("Fetching video metadata", options.debug, options.json, async () => {
+    return fetchVideoMetadata(options.url, toolResult.tools, options.debug);
+  });
+
+  if (!metadata.subtitleAvailability.preferredSource) {
+    throw new AppError("English subtitles are required to suggest clip ideas for this video.", {
+      code: "AI_SUGGEST_SUBTITLES_UNAVAILABLE",
+      hint: "Try the regular mkreel flow, or choose a video with English subtitles.",
+    });
+  }
+
+  const transcriptText = await loadSubtitleTranscriptContext({
+    url: options.url,
+    metadata,
+    tools: toolResult.tools,
+    debug: options.debug,
+    quiet: options.json,
+  });
+
+  if (!transcriptText) {
+    throw new AppError("mkreel could not build a transcript context for suggestions.", {
+      code: "AI_SUGGEST_TRANSCRIPT_UNAVAILABLE",
+    });
+  }
+
+  const result = await runMaybeStepped("Scanning the transcript for strong moments", options.debug, options.json, async () => {
+    return getClipSuggestions({
+      ai: options.ai,
+      cwd: options.cwd,
+      sourceTitle: metadata.title,
+      uploader: metadata.uploader,
+      durationSeconds: metadata.durationSeconds,
+      transcriptText,
+      creatorGoal: "Find three distinct creator-ready short-form moments.",
+    });
+  });
+
+  if (options.json) {
+    printClipSuggestionsJson(metadata, result.data, result.provider);
+    return;
+  }
+
+  printClipSuggestions(metadata, result.data, result.provider);
+}
+
+export async function runPackageCommand(input: {
+  inputPath: string;
+  ai?: AiProviderPreference;
+  json?: boolean;
+  debug?: boolean;
+  context?: string;
+  cwd: string;
+}): Promise<void> {
+  const options = normalizePackageCommandOptions(input);
+  if (!(await fs.pathExists(options.inputPath))) {
+    throw new AppError("The file for package mode was not found.", {
+      code: "AI_PACKAGE_FILE_MISSING",
+      hint: "Pass a real local video file path, for example mkreel package clip.mp4.",
+    });
+  }
+
+  if (!options.json) {
+    renderHeader({
+      compact: false,
+    });
+  }
+
+  const fileName = path.basename(options.inputPath);
+  const sidecarContext = await loadPackageSidecarContext(options.inputPath);
+  const result = await runMaybeStepped("Building creator publish pack", options.debug, options.json, async () => {
+    return getPackageOutput({
+      ai: options.ai,
+      cwd: options.cwd,
+      fileName,
+      sidecarContext,
+      extraContext: options.context ?? titleFromFileName(options.inputPath),
+    });
+  });
+
+  if (options.json) {
+    printPackageOutputJson(options.inputPath, result.data, result.provider);
+    return;
+  }
+
+  printPackageOutput(options.inputPath, result.data, result.provider);
 }
 
 export { normalizeCliOptions };

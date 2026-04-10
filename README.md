@@ -32,10 +32,19 @@
 
 `mkreel` takes a YouTube URL, lets you choose a segment, optionally turns it into a `1080x1920` reel, retimes English subtitles in native TypeScript, burns them into the video, and exports a ready-to-post MP4.
 
+If you have `codex` or `claude` installed, `mkreel` can also act like a smart creator sidecar:
+
+- `mkreel <url> --smart` suggests a clip, mode, and caption preset before the normal guided flow
+- `mkreel suggest <url>` scans the transcript for three strong clip ideas
+- `mkreel package <file.mp4>` generates a creator-friendly publish pack
+
+Core rendering, validation, file handling, subtitle retiming, and final ffmpeg work all stay inside `mkreel`. AI only suggests safe values that `mkreel` validates before use.
+
 ## Why It Feels Good
 
 - Guided interactive flow with smart defaults
 - Fully scriptable flags when you want automation
+- Optional AI sidecar for clip ideas and publish packs
 - First-run dependency bootstrapping for `ffmpeg`, `ffprobe`, and `yt-dlp`
 - Ready-made caption presets for Shorts, Reels, and TikTok-style exports
 - Clean subtitle retiming, clamping, overlap cleanup, and renumbering
@@ -64,10 +73,23 @@ npx mkreel --help
 mkreel https://www.youtube.com/watch?v=YOUR_VIDEO_ID
 ```
 
+Optional AI-assisted entry point:
+
+```bash
+mkreel https://www.youtube.com/watch?v=YOUR_VIDEO_ID --smart
+```
+
 If you prefer `npx`:
 
 ```bash
 npx mkreel https://www.youtube.com/watch?v=YOUR_VIDEO_ID
+```
+
+Standalone AI helper commands:
+
+```bash
+mkreel suggest https://www.youtube.com/watch?v=YOUR_VIDEO_ID
+mkreel package clip.mp4
 ```
 
 ### 3. Answer A Few Prompts
@@ -96,6 +118,7 @@ The interactive flow is intentionally compact:
 | A dry preview first | `--dry-run` |
 | Temp files kept for inspection | `--keep-temp` |
 | Deep failure details | `--debug` |
+| AI-assisted defaults before the guided flow | `--smart` |
 
 ## A Good First Command
 
@@ -110,6 +133,81 @@ mkreel "https://youtu.be/dQw4w9WgXcQ" \
   --subtitle-style creator \
   --output final.mp4
 ```
+
+AI-assisted guided run:
+
+```bash
+mkreel "https://youtu.be/dQw4w9WgXcQ" --smart
+```
+
+Transcript-driven clip ideas:
+
+```bash
+mkreel suggest "https://youtu.be/dQw4w9WgXcQ" --ai auto
+```
+
+Creator publish pack for a finished clip:
+
+```bash
+mkreel package "./my-finished-clip.mp4" \
+  --ai codex \
+  --context "Founder interview clip about consistency and audience growth"
+```
+
+JSON output for automation:
+
+```bash
+mkreel suggest "<url>" --json
+mkreel package "./my-finished-clip.mp4" --json
+```
+
+## Smart Workflows
+
+### `--smart`
+
+`mkreel <url> --smart` keeps the normal guided experience, but first tries to:
+
+1. fetch video metadata
+2. read English subtitle text with timestamps
+3. ask the selected AI provider for:
+   - a suggested clip range
+   - `reel` vs `original`
+   - a supported caption preset
+   - a short reason
+
+If the suggestion looks good, you can accept it. If not, `mkreel` continues with the regular manual prompts and uses the suggestion as a starting point.
+
+If AI is unavailable, invalid, or times out, `mkreel` quietly falls back with a message like:
+
+```text
+Smart suggestions weren't available, so mkreel will continue with the regular flow.
+```
+
+### `suggest`
+
+`mkreel suggest <url>` returns three transcript-grounded clip ideas with:
+
+- `start`
+- `end`
+- `label`
+- `reason`
+- `confidence`
+- `captionPreset`
+- `mode`
+
+Human mode prints a creator-friendly list. `--json` prints structured JSON only.
+
+### `package`
+
+`mkreel package <file.mp4>` generates a publish pack for a finished clip:
+
+- 5 short title ideas
+- 3 thumbnail text ideas
+- 1 social caption
+- 5 to 10 hashtags
+- 2 to 3 short hook lines
+
+If there is matching sidecar text near the file, `mkreel` uses it. You can also add extra context with `--context`.
 
 If you just want to preview the resolved plan without downloading or exporting:
 
@@ -145,6 +243,8 @@ Long captions are wrapped automatically, and `mkreel` can reduce caption size sl
 | `--end <time>` | Clip end time |
 | `--mode <mode>` | `reel` or `original` |
 | `--subs <mode>` | `burn` or `skip` |
+| `--smart` | Ask AI for a suggested clip, mode, and caption preset |
+| `--ai <provider>` | `auto`, `codex`, or `claude` for AI-assisted workflows |
 | `--subtitle-position <position>` | `bottom`, `lower-third`, `center`, `top`, or `custom` |
 | `--subtitle-size <size>` | `compact`, `balanced`, `large`, `xl`, or `custom` |
 | `--subtitle-style <style>` | `creator`, `clean`, `soft`, or `custom` |
@@ -188,6 +288,25 @@ Managed tools are cached for reuse. On macOS, that typically lands under:
 ```
 
 This setup is quiet by default and only shows raw details when `--debug` is enabled.
+
+## AI Provider Detection And Fallback
+
+AI is optional. The direct clipping/rendering path does not require `codex` or `claude`.
+
+When you use `--smart`, `suggest`, or `package`, `mkreel` checks available providers in this order:
+
+1. `codex`
+2. `claude`
+
+For a provider to be considered ready, `mkreel` verifies that:
+
+- the CLI is installed
+- its non-interactive structured-output mode is available
+- the user is signed in
+
+If `--ai auto` is used, `mkreel` picks the first ready provider. If a provider fails during the request, `mkreel` can fall through to the next available provider in auto mode.
+
+All AI responses are parsed as JSON, validated with `zod`, normalized, and checked again against `mkreel`'s supported values. AI cannot inject raw ffmpeg flags, shell fragments, or arbitrary rendering directives.
 
 ## Reel Mode
 

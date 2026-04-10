@@ -1,16 +1,15 @@
 import { confirm, input, select } from "@inquirer/prompts";
 
+import { CAPTION_PRESET_CHOICES, buildPlacementFromCaptionPreset, buildPlacementFromPreset } from "./captions.js";
 import {
-  DEFAULT_BOTTOM_SUBTITLE_PLACEMENT,
-  DEFAULT_TOP_SUBTITLE_PLACEMENT,
   applySubtitleSizePreset,
   applySubtitleStylePreset,
   getDefaultCustomSubtitlePlacement,
-  getSubtitlePlacementPreset,
 } from "./config.js";
 import { AppError } from "./errors.js";
 import { formatTimestamp, parseTimeInput, validateTimeRange } from "./time.js";
 import type {
+  CaptionPresetId,
   ExecutionOptions,
   NormalizedCliOptions,
   OutputMode,
@@ -22,60 +21,17 @@ import type {
 } from "./types.js";
 
 interface SubtitlePromptConfig {
+  defaultPresetId?: CaptionPresetId;
   placement?: SubtitlePlacement;
 }
 
-type CaptionPresetChoice = {
-  id: string;
-  label: string;
-  placement: SubtitlePositionPreset;
-  size: SubtitleSizePreset;
-  style: SubtitleStylePreset;
-  textPreset: SubtitlePlacement["textPreset"];
-};
-
-const CAPTION_PRESET_CHOICES: CaptionPresetChoice[] = [
-  {
-    id: "bottom-creator",
-    label: "Bottom creator (recommended)",
-    placement: "bottom",
-    size: "balanced",
-    style: "creator",
-    textPreset: "balanced",
-  },
-  {
-    id: "bottom-compact",
-    label: "Bottom compact",
-    placement: "bottom",
-    size: "compact",
-    style: "creator",
-    textPreset: "compact",
-  },
-  {
-    id: "lower-third-clean",
-    label: "Lower third clean",
-    placement: "lower-third",
-    size: "balanced",
-    style: "clean",
-    textPreset: "balanced",
-  },
-  {
-    id: "center-punch",
-    label: "Center punch",
-    placement: "center",
-    size: "xl",
-    style: "creator",
-    textPreset: "punch",
-  },
-  {
-    id: "top-clean",
-    label: "Top safe clean",
-    placement: "top",
-    size: "balanced",
-    style: "clean",
-    textPreset: "balanced",
-  },
-];
+export interface InteractiveOptionDefaults {
+  startSeconds?: number;
+  endSeconds?: number;
+  mode?: OutputMode;
+  subtitles?: SubtitleMode;
+  captionPresetId?: CaptionPresetId;
+}
 
 async function promptTime(
   message: string,
@@ -97,30 +53,6 @@ async function promptTime(
   });
 
   return parseTimeInput(value);
-}
-
-function buildPlacementFromPreset(
-  preset: SubtitlePositionPreset,
-  seed?: SubtitlePlacement,
-): SubtitlePlacement {
-  if (preset === "bottom") {
-    return { ...DEFAULT_BOTTOM_SUBTITLE_PLACEMENT };
-  }
-
-  if (preset === "top") {
-    return { ...DEFAULT_TOP_SUBTITLE_PLACEMENT };
-  }
-
-  if (preset === "lower-third" || preset === "center") {
-    return getSubtitlePlacementPreset(preset);
-  }
-
-  return {
-    ...getDefaultCustomSubtitlePlacement(),
-    ...seed,
-    preset: "custom",
-    label: "Custom",
-  };
 }
 
 async function promptCustomPlacement(seed?: SubtitlePlacement): Promise<SubtitlePlacement> {
@@ -167,7 +99,7 @@ async function promptCustomPlacement(seed?: SubtitlePlacement): Promise<Subtitle
 async function resolveSubtitlePlacement(config: SubtitlePromptConfig = {}): Promise<SubtitlePlacement> {
   const preset = await select<string>({
     message: "Caption look (pick a preset)",
-    default: CAPTION_PRESET_CHOICES[0]?.id ?? "bottom-creator",
+    default: config.defaultPresetId ?? CAPTION_PRESET_CHOICES[0]?.id ?? "bottom-creator",
     choices: [
       ...CAPTION_PRESET_CHOICES.map((choice) => ({
         name: choice.label,
@@ -187,28 +119,20 @@ async function resolveSubtitlePlacement(config: SubtitlePromptConfig = {}): Prom
     return promptCustomPlacement(config.placement);
   }
 
-  let placement = buildPlacementFromPreset(selectedPreset.placement, config.placement);
-  placement = applySubtitleSizePreset(placement, selectedPreset.size);
-  placement = applySubtitleStylePreset(placement, selectedPreset.style);
-  placement = {
-    ...placement,
-    label: selectedPreset.label,
-    textPreset: selectedPreset.textPreset,
-  };
-
-  return placement;
+  return buildPlacementFromCaptionPreset(selectedPreset.id, config.placement);
 }
 
 export async function collectInteractiveOptions(
   normalized: NormalizedCliOptions,
+  defaults: InteractiveOptionDefaults = {},
 ): Promise<ExecutionOptions> {
   const startSeconds =
     normalized.startSeconds ??
-    (await promptTime("Clip start time", undefined));
+    (await promptTime("Clip start time", defaults.startSeconds));
 
   const endSeconds =
     normalized.endSeconds ??
-    (await promptTime("Clip end time", undefined, (valueSeconds) => {
+    (await promptTime("Clip end time", defaults.endSeconds, (valueSeconds) => {
       try {
         validateTimeRange(startSeconds, valueSeconds);
         return true;
@@ -223,7 +147,7 @@ export async function collectInteractiveOptions(
     normalized.mode ??
     (await select<OutputMode>({
       message: "Output mode",
-      default: "reel",
+      default: defaults.mode ?? "reel",
       choices: [
         { name: "Reel (9:16, best for social clips)", value: "reel" },
         { name: "Original (keep source framing)", value: "original" },
@@ -234,14 +158,18 @@ export async function collectInteractiveOptions(
     normalized.subtitles ??
     ((await confirm({
       message: "Burn captions into the final video?",
-      default: true,
+      default: defaults.subtitles ? defaults.subtitles === "burn" : true,
     }))
       ? "burn"
       : "skip");
 
   const subtitlePlacement =
     subtitles === "burn"
-      ? normalized.subtitlePlacement ?? (await resolveSubtitlePlacement({ placement: normalized.subtitlePlacement }))
+      ? normalized.subtitlePlacement ??
+        (await resolveSubtitlePlacement({
+          defaultPresetId: defaults.captionPresetId,
+          placement: normalized.subtitlePlacement,
+        }))
       : undefined;
 
   return {

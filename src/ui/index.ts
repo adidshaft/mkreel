@@ -1,8 +1,10 @@
 import chalk from "chalk";
 import ora, { type Ora } from "ora";
 
+import { formatCaptionPresetLabel } from "../captions.js";
 import { APP_NAME, APP_TAGLINE } from "../config.js";
-import type { ExecutionOptions, PlannedRun, StepLogger } from "../types.js";
+import type { ClipSuggestion, PackageOutput, SmartRecommendation } from "../ai/contracts.js";
+import type { AiProviderName, ExecutionOptions, PlannedRun, StepLogger, VideoMetadata } from "../types.js";
 
 const brand = chalk.hex("#ff6a3d");
 const accent = chalk.hex("#26a0da");
@@ -131,4 +133,122 @@ export function printWarning(message: string): void {
 
 export function printNote(message: string): void {
   console.log(chalk.dim(message));
+}
+
+function formatModeLabel(mode: ExecutionOptions["mode"]): string {
+  return mode === "reel" ? "Reel" : "Original";
+}
+
+export function printSmartSuggestion(suggestion: SmartRecommendation, provider: AiProviderName): void {
+  console.log(accent.bold("Smart suggestion"));
+  console.log(`  clip      ${suggestion.startTimestamp} -> ${suggestion.endTimestamp}`);
+  console.log(`  mode      ${formatModeLabel(suggestion.mode)}`);
+  console.log(`  captions  ${formatCaptionPresetLabel(suggestion.captionPreset)}`);
+  console.log(`  reason    ${suggestion.reason}`);
+  console.log(chalk.dim(`  provider  ${provider}`));
+  console.log("");
+}
+
+export function printClipSuggestions(
+  metadata: VideoMetadata,
+  ideas: ClipSuggestion[],
+  provider: AiProviderName,
+): void {
+  console.log(accent.bold("Clip ideas"));
+  console.log(`  source    ${metadata.title}`);
+  console.log(chalk.dim(`  provider  ${provider}`));
+  console.log("");
+
+  ideas.forEach((idea, index) => {
+    console.log(cream.bold(`${index + 1}. ${idea.label}`));
+    console.log(`   clip      ${idea.startTimestamp} -> ${idea.endTimestamp}`);
+    console.log(`   mode      ${formatModeLabel(idea.mode)}`);
+    console.log(`   captions  ${formatCaptionPresetLabel(idea.captionPreset)}`);
+    console.log(`   reason    ${idea.reason}`);
+    console.log(`   confidence ${idea.confidence}`);
+    console.log("");
+  });
+}
+
+export function printClipSuggestionsJson(
+  metadata: VideoMetadata,
+  ideas: ClipSuggestion[],
+  provider: AiProviderName,
+): void {
+  console.log(
+    JSON.stringify(
+      {
+        provider,
+        sourceTitle: metadata.title,
+        ideas: ideas.map((idea) => ({
+          start: idea.startTimestamp,
+          end: idea.endTimestamp,
+          label: idea.label,
+          reason: idea.reason,
+          confidence: idea.confidence,
+          captionPreset: idea.captionPreset,
+          mode: idea.mode,
+        })),
+      },
+      null,
+      2,
+    ),
+  );
+}
+
+export function printPackageOutput(
+  filePath: string,
+  pack: PackageOutput,
+  provider: AiProviderName,
+): void {
+  console.log(accent.bold("Publish pack"));
+  console.log(`  file      ${filePath}`);
+  console.log(chalk.dim(`  provider  ${provider}`));
+  console.log("");
+
+  console.log(cream.bold("Title ideas"));
+  pack.titles.forEach((title) => {
+    console.log(`  - ${title}`);
+  });
+  console.log("");
+
+  console.log(cream.bold("Thumbnail text"));
+  pack.thumbnailText.forEach((title) => {
+    console.log(`  - ${title}`);
+  });
+  console.log("");
+
+  console.log(cream.bold("Caption"));
+  console.log(`  ${pack.socialCaption}`);
+  console.log("");
+
+  console.log(cream.bold("Hashtags"));
+  console.log(`  ${pack.hashtags.join(" ")}`);
+  console.log("");
+
+  if (pack.hooks.length > 0) {
+    console.log(cream.bold("Hook lines"));
+    pack.hooks.forEach((hook) => {
+      console.log(`  - ${hook}`);
+    });
+    console.log("");
+  }
+}
+
+export function printPackageOutputJson(
+  filePath: string,
+  pack: PackageOutput,
+  provider: AiProviderName,
+): void {
+  console.log(
+    JSON.stringify(
+      {
+        provider,
+        file: filePath,
+        ...pack,
+      },
+      null,
+      2,
+    ),
+  );
 }

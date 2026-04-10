@@ -16,6 +16,8 @@ describe("CLI normalization", () => {
 
     expect(normalized.startSeconds).toBe(523);
     expect(normalized.endSeconds).toBe(698);
+    expect(normalized.smart).toBe(false);
+    expect(normalized.ai).toBe("auto");
     expect(normalized.subtitlePlacement).toMatchObject({
       preset: "bottom",
       label: "Bottom safe",
@@ -78,6 +80,27 @@ describe("CLI normalization", () => {
       outline: 4,
       shadow: 0,
       bold: false,
+    });
+  });
+
+  it("supports smart mode flags without changing the direct defaults", () => {
+    const normalized = normalizeCliOptions({
+      url: "https://youtu.be/abc123",
+      smart: true,
+      ai: "claude",
+      start: "00:00:05",
+      end: "00:00:12",
+      mode: "original",
+      subs: "skip",
+      cwd: process.cwd(),
+      nonInteractive: true,
+    });
+
+    expect(normalized).toMatchObject({
+      smart: true,
+      ai: "claude",
+      subtitles: "skip",
+      subtitlePlacement: undefined,
     });
   });
 });
