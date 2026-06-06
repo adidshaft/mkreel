@@ -1,0 +1,37 @@
+name: Feature request
+description: Suggest a focused improvement for mkreel.
+title: "Feature: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Workflow
+      description: What creator or automation workflow would this improve?
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Current limitation
+      description: What is hard, manual, or impossible today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the CLI shape, output, or behavior you want.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Existing workaround or a smaller version of the idea.
+  - type: textarea
+    id: concerns
+    attributes:
+      label: Compatibility, privacy, or security notes
+      description: Anything that could affect local files, downloads, AI providers, shell execution, or published package behavior?

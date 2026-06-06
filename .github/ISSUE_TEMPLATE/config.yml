@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security reports
+    url: https://github.com/adidshaft/mkreel/security/advisories/new
+    about: Please report vulnerabilities privately.
+  - name: Maintainer feedback on X
+    url: https://x.com/adidshaft
+    about: Send quick public feedback to the maintainer.
