@@ -395,9 +395,15 @@ On failures, `mkreel` preserves the temp workspace path so you can inspect:
 
 ```bash
 npm install
+npm run verify
+```
+
+Individual checks are also available:
+
+```bash
 npm run typecheck
-npm run build
 npm test
+npm run build
 npm run dev -- --help
 ```
 
@@ -413,3 +419,15 @@ Or build and run the compiled CLI:
 npm run build
 node dist/cli.js --help
 ```
+
+## Contributing
+
+Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) for setup, review expectations, and issue guidance.
+
+Before opening a pull request, run:
+
+```bash
+npm run verify
+```
+
+Please use the GitHub issue templates for bugs, feature requests, questions, and good first issues. Security reports should follow [SECURITY.md](SECURITY.md).
