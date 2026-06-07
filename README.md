@@ -161,6 +161,41 @@ mkreel suggest "<url>" --json
 mkreel package "./my-finished-clip.mp4" --json
 ```
 
+## Non-Interactive Automation
+
+Use `--non-interactive` when mkreel runs from a script, CI job, or other environment where prompts should fail fast instead of waiting for input. Provide every required clipping flag up front: `--start`, `--end`, `--mode`, and `--subs`.
+
+```bash
+mkreel "https://youtu.be/dQw4w9WgXcQ" \
+  --non-interactive \
+  --start 8:43 \
+  --end 11:38 \
+  --mode reel \
+  --subs skip \
+  --output ./dist/reel.mp4
+```
+
+Validate the resolved plan before rendering by adding `--dry-run`:
+
+```bash
+mkreel "https://youtu.be/dQw4w9WgXcQ" \
+  --non-interactive \
+  --start 8:43 \
+  --end 11:38 \
+  --mode reel \
+  --subs skip \
+  --dry-run
+```
+
+The AI helper commands also support machine-readable output for automation:
+
+```bash
+mkreel suggest "https://youtu.be/dQw4w9WgXcQ" --json
+mkreel package "./dist/reel.mp4" --json
+```
+
+When sharing CI logs or bug reports, redact private video URLs, local file paths, and any workspace-specific output paths first.
+
 ## Smart Workflows
 
 ### `--smart`
