@@ -290,14 +290,29 @@ export function validateSubtitlePlacement(placement: SubtitlePlacement): void {
     marginV: placement.marginV,
     marginL: placement.marginL,
     marginR: placement.marginR,
-    fontSize: placement.fontSize,
-    outline: placement.outline,
-    shadow: placement.shadow,
   })) {
     if (!Number.isInteger(value) || value < 0) {
       throw new AppError(`Subtitle ${key} must be a non-negative whole number.`, {
         code: "SUBTITLE_PLACEMENT_INVALID",
       });
     }
+  }
+
+  if (!Number.isInteger(placement.fontSize) || placement.fontSize < 16 || placement.fontSize > 160) {
+    throw new AppError("Subtitle font size must be between 16 and 160.", {
+      code: "SUBTITLE_FONT_SIZE_INVALID",
+    });
+  }
+
+  if (!Number.isInteger(placement.outline) || placement.outline < 0 || placement.outline > 24) {
+    throw new AppError("Subtitle outline must be between 0 and 24.", {
+      code: "SUBTITLE_OUTLINE_INVALID",
+    });
+  }
+
+  if (!Number.isInteger(placement.shadow) || placement.shadow < 0 || placement.shadow > 12) {
+    throw new AppError("Subtitle shadow must be between 0 and 12.", {
+      code: "SUBTITLE_SHADOW_INVALID",
+    });
   }
 }

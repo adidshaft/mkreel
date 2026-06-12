@@ -77,6 +77,19 @@ const optionSchema = z.object({
   cwd: z.string(),
 });
 
+function parseCliOptions(input: RequestedCliOptions): z.infer<typeof optionSchema> {
+  const parsed = optionSchema.safeParse(input);
+  if (!parsed.success) {
+    const details = parsed.error.issues
+      .map((issue) => `${issue.path.join(".") || "input"}: ${issue.message}`)
+      .join("; ");
+    throw new AppError(`Invalid CLI option ${details}`, {
+      code: "CLI_OPTIONS_INVALID",
+    });
+  }
+  return parsed.data;
+}
+
 function validateUrl(rawUrl: string): string {
   let parsed: URL;
   try {
@@ -151,7 +164,7 @@ async function maybeOpenFile(outputPath: string): Promise<void> {
 }
 
 function normalizeCliOptions(input: RequestedCliOptions): NormalizedCliOptions {
-  const parsed = optionSchema.parse(input);
+  const parsed = parseCliOptions(input);
   const nonInteractive =
     parsed.nonInteractive ?? !(Boolean(process.stdin.isTTY) && Boolean(process.stdout.isTTY));
 
